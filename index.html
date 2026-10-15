@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MiSpeL-Rechner</title>
+<style>
+  :root{
+    --bg:#0f1420; --panel:#171e2e; --panel2:#1e2638; --line:#2a3448;
+    --txt:#e6ebf5; --muted:#9aa7bd; --accent:#4f9cff; --accent2:#36d399;
+    --warn:#f4a742; --in:#223049; --inborder:#334155;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    background:linear-gradient(160deg,#0f1420,#121a2b);color:var(--txt);padding:24px;line-height:1.4}
+  h1{font-size:22px;margin:0 0 4px}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:20px}
+  .wrap{max-width:1180px;margin:0 auto}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:20px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .card .label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  .card .val{font-size:26px;font-weight:600;margin-top:4px}
+  .card.hl{border-color:var(--accent2);box-shadow:0 0 0 1px rgba(54,211,153,.25)}
+  .card.hl .val{color:var(--accent2)}
+  .grid{display:grid;grid-template-columns:1.3fr 1fr;gap:20px}
+  @media(max-width:900px){.grid{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+  .panel h2{font-size:14px;margin:0 0 12px;color:var(--txt)}
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  th,td{border:1px solid var(--line);padding:5px 7px;text-align:right}
+  th{background:var(--panel2);color:var(--muted);font-weight:500;position:sticky;top:0}
+  td.day{color:var(--muted);text-align:center}
+  input[type=number]{width:72px;background:var(--in);border:1px solid var(--line);color:var(--txt);
+    border-radius:6px;padding:4px 6px;font-size:13px;text-align:right}
+  input[type=number]:focus{outline:none;border-color:var(--accent)}
+  .flag{width:46px}
+  .calc{background:var(--panel2);color:var(--muted)}
+  .scroll{max-height:520px;overflow:auto;border-radius:8px}
+  .res-table th:nth-child(1),.res-table td:nth-child(1){text-align:center;width:34px}
+  .res-table td:nth-child(2){text-align:left;color:var(--muted);font-size:12px}
+  .res-table td.num{font-variant-numeric:tabular-nums}
+  .res-table tr.big td{background:rgba(54,211,153,.08);font-weight:600;color:var(--accent2)}
+  .btns{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+  button{background:var(--in);border:1px solid var(--line);color:var(--txt);padding:7px 13px;
+    border-radius:8px;cursor:pointer;font-size:13px}
+  button:hover{border-color:var(--accent)}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#06101f;font-weight:600}
+  .legend{font-size:11px;color:var(--muted);margin-top:8px}
+  .pos{color:var(--accent2)} .neg{color:var(--warn)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>MiSpeL-Rechner</h1>
+  <div class="sub">Multi-Speicher-Letztverbrauch · Förderfähige Einspeisung aus PV &amp; Batterie · live rechnend</div>
+
+  <div class="cards" id="kpis"></div>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>Eingaben &amp; Viertelstunden-Werte</h2>
+      <div class="btns">
+        <button class="primary" onclick="reset()">Beispiel laden</button>
+        <button onclick="zero()">Alles 0</button>
+      </div>
+      <div class="scroll">
+      <table id="main">
+        <thead><tr>
+          <th>Tag</th><th>PV</th><th>Verbr.</th><th>BESS</th><th>Preis&gt;0?</th>
+          <th title="Kauf Netz Z1NB">Z1NB</th><th title="Verkauf Netz Z1NE">Z1NE</th>
+          <th title="Z2V Laden">Z2V</th><th title="Z2E Entladen">Z2E</th>
+          <th title="Graustrom aus Batterie">#1</th><th title="Einspeiseanteil Batterie">#2</th>
+          <th title="Einspeisung PV">#23</th><th title="Prämie PV">#25</th><th title="Förderf. Batt.">#27</th>
+        </tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+      </div>
+      <div class="legend">Blau umrandete Felder sind editierbar. Preis&gt;0?: 1 = positiver Preis (prämienfähig), 0 = nicht. Grau = berechnet.</div>
+    </div>
+
+    <div class="panel">
+      <h2>Auswertung (Monat)</h2>
+      <div class="scroll">
+      <table class="res-table"><thead><tr><th>#</th><th>Beschreibung</th><th>Wert</th></tr></thead>
+      <tbody id="res"></tbody></table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const NROWS = 20; // rows 2..21
+// default example inputs from the sheet
+const DEFAULTS = {
+  1:{pv:10,v:2.5,b:-7.5,l:1},
+  2:{pv:10,v:2.5,b:-7.5,l:0},
+  3:{pv:0, v:2.5,b:13.5,l:1},
+  4:{pv:0, v:0,  b:0,   l:1},
+};
+let state = [];
+function initState(useDefault){
+  state = [];
+  for(let i=1;i<=NROWS;i++){
+    if(useDefault && DEFAULTS[i]) state.push({...DEFAULTS[i]});
+    else state.push({pv:0,v:0,b:0,l:1});
+  }
+}
+function perRow(r){
+  const B=+r.pv||0, C=+r.v||0, D=+r.b||0, L=+r.l||0;
+  const E=Math.max(0,-D+C-B);
+  const F=Math.max(0, D-C+B);
+  const G=Math.max(-D,0);
+  const H=Math.max(D,0);
+  const I=Math.min(E,G);
+  const J=Math.min(F,H);
+  const K=F-J;
+  const M=L*K;
+  const N=L*J;
+  return {B,C,D,L,E,F,G,H,I,J,K,M,N};
+}
+function compute(){
+  const rows = state.map(perRow);
+  const sum = f => rows.reduce((a,x)=>a+f(x),0);
+  const S={};
+  S[4]=sum(x=>x.E);
+  S[5]=sum(x=>x.F);
+  S[6]=sum(x=>x.G);
+  S[7]=sum(x=>x.H);
+  S[8]=sum(x=>x.I);
+  S[9]=S[6]-S[8];
+  S[10]=sum(x=>x.J);
+  S[11]=Math.max(S[7]-S[6],0);
+  S[12]=Math.max(S[10]-S[11],0);
+  S[13]=S[6]?S[7]/S[6]:0;
+  S[14]=S[13]*S[9];
+  S[15]=Math.max(S[12]-S[14],0);
+  S[16]=Math.max(S[6]-S[7],0);
+  S[17]=S[7]?S[15]/S[7]:0;
+  S[18]=S[17]*S[16];
+  S[19]=Math.min(S[15]+S[18],S[5]);
+  S[20]=S[4]-S[19];
+  S[21]=S[20];
+  S[25]=sum(x=>x.M);
+  S[27]=Math.min(S[12],S[14]);
+  S[28]=sum(x=>x.N);
+  S[29]=S[10]?S[28]/S[10]:0;
+  S[30]=S[29]*S[27];
+  S[31]=S[25]+S[30];
+  S[32]=S[31];
+  return {rows,S};
+}
+const RES_DEFS = [
+  [4,'Buy Total (Σ Z1NB)'],[5,'Sell Total (Σ Z1NE)'],[6,'Laden Total (Σ Z2V)'],
+  [7,'Entladen Total (Σ Z2E)'],[8,'Laden Grau Total'],[9,'Laden Grün Total'],
+  [10,'Sell aus Batterie Total'],[11,'Behalten über Monatsgrenze'],[12,'Netto Sell aus Batterie'],
+  [13,'RTE – Wirkungsgrad'],[14,'Entladen Grün / wirkungsgradber.'],[15,'Saldierungsf. Netzeinspeisung'],
+  [16,'Stromverlust an Wirkungsgrad'],[17,'Anteil Graustromentladung'],[18,'Graustrom-Anteil der Verluste'],
+  [19,'Abzug Verbraucher v. Graubezug'],[20,'Umlagebel. Netzbezug (Monat)'],[21,'Umlagebel. Netzbezug (Jahr)'],
+  [25,'Σ PV-Prämie (Monat)'],[27,'min[(13);(15)]'],[28,'Σ Förderf. Batterieeinsp.'],
+  [29,'Anteil förderf. Batterieeinsp.'],[30,'Gesch. förderf. Grün a. Batt.'],[31,'Summe förderf. PV + Batterie'],
+  [32,'► Endergebnis (landet auf Konto)'],
+];
+function fmt(n){ if(!isFinite(n))return '–'; return (Math.round(n*1000)/1000).toLocaleString('de-DE'); }
+function render(){
+  const {rows,S}=compute();
+  // main table
+  const tb=document.getElementById('tbody'); tb.innerHTML='';
+  for(let i=0;i<NROWS;i++){
+    const r=rows[i], s=state[i];
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td class="day">${i+1}</td>`+
+      `<td><input type="number" step="any" value="${s.pv}" data-i="${i}" data-k="pv"></td>`+
+      `<td><input type="number" step="any" value="${s.v}" data-i="${i}" data-k="v"></td>`+
+      `<td><input type="number" step="any" value="${s.b}" data-i="${i}" data-k="b"></td>`+
+      `<td><input class="flag" type="number" step="1" min="0" max="1" value="${s.l}" data-i="${i}" data-k="l"></td>`+
+      `<td class="calc">${fmt(r.E)}</td><td class="calc">${fmt(r.F)}</td>`+
+      `<td class="calc">${fmt(r.G)}</td><td class="calc">${fmt(r.H)}</td>`+
+      `<td class="calc">${fmt(r.I)}</td><td class="calc">${fmt(r.J)}</td>`+
+      `<td class="calc">${fmt(r.K)}</td><td class="calc">${fmt(r.M)}</td><td class="calc">${fmt(r.N)}</td>`;
+    tb.appendChild(tr);
+  }
+  tb.querySelectorAll('input').forEach(inp=>{
+    inp.addEventListener('input',e=>{
+      const i=+e.target.dataset.i,k=e.target.dataset.k;
+      state[i][k]=e.target.value===''?0:+e.target.value;
+      render();
+    });
+  });
+  // KPIs
+  const kpi=document.getElementById('kpis');
+  kpi.innerHTML=`
+    <div class="card hl"><div class="label">Endergebnis (Konto)</div><div class="val">${fmt(S[32])}</div></div>
+    <div class="card"><div class="label">Σ Förderf. PV-Prämie</div><div class="val">${fmt(S[25])}</div></div>
+    <div class="card"><div class="label">Σ Förderf. Batterie</div><div class="val">${fmt(S[30])}</div></div>
+    <div class="card"><div class="label">RTE Wirkungsgrad</div><div class="val">${fmt(S[13]*100)}%</div></div>`;
+  // results
+  const res=document.getElementById('res'); res.innerHTML='';
+  RES_DEFS.forEach(([n,desc])=>{
+    const tr=document.createElement('tr');
+    if(n===32) tr.className='big';
+    let v=S[n]; if(n===13||n===17||n===29) v=S[n];
+    tr.innerHTML=`<td>${n}</td><td>${desc}</td><td class="num">${fmt(v)}</td>`;
+    res.appendChild(tr);
+  });
+}
+function reset(){ initState(true); render(); }
+function zero(){ initState(false); render(); }
+initState(true); render();
+</script>
+</body>
+</html>
