@@ -68,6 +68,14 @@
 
   input[type=number]:focus{outline:none;border-color:var(--accent)}
 
+  /* Spinner-Pfeile entfernen */
+
+  input[type=number]::-webkit-outer-spin-button,
+
+  input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+
+  input[type=number]{-moz-appearance:textfield;appearance:textfield}
+
   .flag{width:46px}
 
   .calc{background:var(--panel2);color:var(--muted)}
@@ -324,17 +332,17 @@ const RES_DEFS = [
 
 function fmt(n){ if(!isFinite(n))return '–'; return (Math.round(n*1000)/1000).toLocaleString('de-DE'); }
 
-function render(){
+// Baut die Eingabetabelle EINMAL auf (Inputs werden nicht bei jedem Tastendruck neu erzeugt,
 
-  const {rows,S}=compute();
+// damit Fokus/Cursor erhalten bleiben). Danach aktualisiert refresh() nur die berechneten Werte.
 
-  // main table
+function buildTable(){
 
   const tb=document.getElementById('tbody'); tb.innerHTML='';
 
   for(let i=0;i<NROWS;i++){
 
-    const r=rows[i], s=state[i];
+    const s=state[i];
 
     const tr=document.createElement('tr');
 
@@ -348,13 +356,13 @@ function render(){
 
       `<td><input class="flag" type="number" step="1" min="0" max="1" value="${s.l}" data-i="${i}" data-k="l"></td>`+
 
-      `<td class="calc">${fmt(r.E)}</td><td class="calc">${fmt(r.F)}</td>`+
+      `<td class="calc" data-c="E"></td><td class="calc" data-c="F"></td>`+
 
-      `<td class="calc">${fmt(r.G)}</td><td class="calc">${fmt(r.H)}</td>`+
+      `<td class="calc" data-c="G"></td><td class="calc" data-c="H"></td>`+
 
-      `<td class="calc">${fmt(r.I)}</td><td class="calc">${fmt(r.J)}</td>`+
+      `<td class="calc" data-c="I"></td><td class="calc" data-c="J"></td>`+
 
-      `<td class="calc">${fmt(r.K)}</td><td class="calc">${fmt(r.M)}</td><td class="calc">${fmt(r.N)}</td>`;
+      `<td class="calc" data-c="K"></td><td class="calc" data-c="M"></td><td class="calc" data-c="N"></td>`;
 
     tb.appendChild(tr);
 
@@ -368,11 +376,35 @@ function render(){
 
       state[i][k]=e.target.value===''?0:+e.target.value;
 
-      render();
+      refresh();            // nur Berechnungen neu, Inputs bleiben unangetastet
 
     });
 
+    // beim Fokus (Klick oder Tab) den alten Wert markieren -> direkt überschreibbar
+
+    inp.addEventListener('focus',e=>{ e.target.select(); });
+
   });
+
+}
+
+// Aktualisiert nur die berechneten Zellen, KPIs und die Auswertung.
+
+function refresh(){
+
+  const {rows,S}=compute();
+
+  const trs=document.getElementById('tbody').children;
+
+  for(let i=0;i<NROWS;i++){
+
+    const r=rows[i], tds=trs[i].querySelectorAll('td.calc');
+
+    const cols=['E','F','G','H','I','J','K','M','N'];
+
+    tds.forEach((td,ci)=>{ td.textContent=fmt(r[cols[ci]]); });
+
+  }
 
   // KPIs
 
@@ -407,6 +439,8 @@ function render(){
   });
 
 }
+
+function render(){ buildTable(); refresh(); }   // kompletter Aufbau (nur bei Reset/Zero nötig)
 
 function reset(){ initState(true); render(); }
 
